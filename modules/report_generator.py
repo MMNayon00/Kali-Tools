@@ -1,6 +1,7 @@
 """
 Report Generator Module
 Aggregate results and generate structured reports
+Supports CLI, JSON, HTML, and PDF formats
 """
 
 import json
@@ -8,6 +9,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict
 from colorama import Fore, Style
+
+# PDF generation imports
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.platypus import Image as RLImage
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+    print(f"{Fore.YELLOW}[!] reportlab not installed - PDF generation disabled{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}[*] Install with: pip install reportlab{Style.RESET_ALL}")
 
 
 def generate_cli_report(all_results: Dict) -> None:
@@ -315,19 +331,294 @@ def generate_html_report(all_results: Dict, output_dir: str = "reports") -> str:
         return ""
 
 
+def generate_pdf_report(all_results: Dict, filename: str = None) -> str:
+    """
+    Generate PDF format report with professional styling
+    
+    Args:
+        all_results: Dictionary containing all reconnaissance results
+        filename: Optional custom filename
+        
+    Returns:
+        Path to saved PDF file
+    """
+    if not PDF_AVAILABLE:
+        print(f"{Fore.RED}[!] PDF generation requires reportlab library{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}[*] Install with: pip install reportlab{Style.RESET_ALL}")
+        return ""
+    
+    # Create reports directory
+    Path("reports").mkdir(exist_ok=True)
+    
+    # Generate filename
+    if not filename:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"reports/mmn_report_{timestamp}.pdf"
+    
+    try:
+        # Create PDF document
+        doc = SimpleDocTemplate(filename, pagesize=letter,
+                              rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        # Container for PDF elements
+        elements = []
+        
+        # Define styles
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#0f4c75'),
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold'
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#1b262c'),
+            spaceAfter=12,
+            spaceBefore=12,
+            fontName='Helvetica-Bold'
+        )
+        
+        # Title
+        title = Paragraph("🛡️ MMN Reconnaissance Report", title_style)
+        elements.append(title)
+        elements.append(Spacer(1, 0.3*inch))
+        
+        # Target Information
+        elements.append(Paragraph("Target Information", heading_style))
+        target_data = [
+            ['Target:', all_results.get('target', 'Unknown')],
+            ['Scan Date:', all_results.get('timestamp', 'Unknown')],
+            ['Framework:', 'MMN v1.0.0']
+        ]
+        target_table = Table(target_data, colWidths=[2*inch, 4*inch])
+        target_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f4f8')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        elements.append(target_table)
+        elements.append(Spacer(1, 0.3*inch))
+        
+        # Target Expansion
+        if 'expansion' in all_results:
+            expansion = all_results['expansion']
+            elements.append(Paragraph("Target Expansion", heading_style))
+            exp_data = []
+            if expansion.get('ip_addresses'):
+                exp_data.append(['IP Addresses:', ', '.join(expansion['ip_addresses'])])
+            if expansion.get('reverse_dns'):
+                exp_data.append(['Reverse DNS:', expansion['reverse_dns']])
+            if expansion.get('hosting_provider', {}).get('provider'):
+                exp_data.append(['Hosting Provider:', expansion['hosting_provider']['provider']])
+            
+            if exp_data:
+                exp_table = Table(exp_data, colWidths=[2*inch, 4*inch])
+                exp_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f4f8')),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('TOPPADDING', (0, 0), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+                ]))
+                elements.append(exp_table)
+                elements.append(Spacer(1, 0.2*inch))
+        
+        # OS Detection
+        if 'os_detection' in all_results and all_results['os_detection']:
+            os_info = all_results['os_detection']
+            elements.append(Paragraph("Operating System Detection", heading_style))
+            os_data = [
+                ['OS Guess:', os_info.get('os_guess', 'Unknown')],
+                ['Confidence:', os_info.get('confidence', 'Low')]
+            ]
+            os_table = Table(os_data, colWidths=[2*inch, 4*inch])
+            os_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f4f8')),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ]))
+            elements.append(os_table)
+            elements.append(Spacer(1, 0.2*inch))
+        
+        # Open Ports
+        if 'ports' in all_results and all_results['ports']:
+            elements.append(Paragraph("Open Ports & Services", heading_style))
+            port_data = [['Port', 'Service', 'Product', 'Version']]
+            for port in all_results['ports'][:20]:  # Limit to first 20
+                port_data.append([
+                    str(port.get('port', 'N/A')),
+                    port.get('service', 'N/A')[:15],
+                    port.get('product', 'N/A')[:15],
+                    port.get('version', 'N/A')[:15]
+                ])
+            
+            port_table = Table(port_data, colWidths=[1*inch, 1.5*inch, 1.75*inch, 1.75*inch])
+            port_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f4c75')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')])
+            ]))
+            elements.append(port_table)
+            
+            if len(all_results['ports']) > 20:
+                elements.append(Paragraph(f"<i>... and {len(all_results['ports']) - 20} more ports</i>", 
+                                        styles['Normal']))
+            elements.append(Spacer(1, 0.3*inch))
+        
+        # CVE Summary
+        if 'cve_report' in all_results:
+            cve_report = all_results['cve_report']
+            elements.append(Paragraph("Vulnerability Assessment Summary", heading_style))
+            
+            vuln_summary_data = [
+                ['Total Services Analyzed:', str(cve_report.get('total_services', 0))],
+                ['Vulnerable Services:', str(cve_report.get('vulnerable_services', 0))],
+                ['Total CVEs Found:', str(cve_report.get('total_cves', 0))]
+            ]
+            
+            vuln_table = Table(vuln_summary_data, colWidths=[2.5*inch, 3.5*inch])
+            vuln_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f4f8')),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ]))
+            elements.append(vuln_table)
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Severity breakdown
+            severity_counts = cve_report.get('severity_counts', {})
+            if any(severity_counts.values()):
+                severity_data = [['Severity', 'Count']]
+                severity_colors_map = {
+                    'CRITICAL': colors.HexColor('#ff4757'),
+                    'HIGH': colors.HexColor('#ff6348'),
+                    'MEDIUM': colors.HexColor('#ffa502'),
+                    'LOW': colors.HexColor('#1e90ff'),
+                    'INFORMATIONAL': colors.grey
+                }
+                
+                for severity, count in severity_counts.items():
+                    if count > 0:
+                        severity_data.append([severity, str(count)])
+                
+                severity_table = Table(severity_data, colWidths=[2*inch, 2*inch])
+                severity_table_style = [
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f4c75')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 10),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ]
+                
+                severity_table.setStyle(TableStyle(severity_table_style))
+                elements.append(severity_table)
+                elements.append(Spacer(1, 0.3*inch))
+            
+            # Detailed CVE findings
+            if cve_report.get('findings'):
+                elements.append(PageBreak())
+                elements.append(Paragraph("Detailed CVE Findings", heading_style))
+                
+                for finding in cve_report['findings'][:10]:  # Limit to first 10 services
+                    service_text = f"<b>Port {finding['port']}: {finding['product']} {finding['version']}</b>"
+                    elements.append(Paragraph(service_text, styles['Normal']))
+                    elements.append(Spacer(1, 0.1*inch))
+                    
+                    if finding.get('cves'):
+                        cve_data = [['CVE ID', 'CVSS', 'Severity']]
+                        for cve in finding['cves'][:5]:  # Top 5 CVEs per service
+                            cve_data.append([
+                                cve.get('cve_id', 'N/A'),
+                                str(cve.get('cvss', 'N/A')),
+                                cve.get('severity', 'N/A')
+                            ])
+                        
+                        cve_table = Table(cve_data, colWidths=[2.5*inch, 1*inch, 1.5*inch])
+                        cve_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3282b8')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, -1), 8),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                            ('TOPPADDING', (0, 0), (-1, -1), 6),
+                        ]))
+                        elements.append(cve_table)
+                    
+                    elements.append(Spacer(1, 0.2*inch))
+        
+        # Footer
+        elements.append(Spacer(1, 0.5*inch))
+        footer_style = ParagraphStyle(
+            'Footer',
+            parent=styles['Normal'],
+            fontSize=8,
+            textColor=colors.grey,
+            alignment=TA_CENTER
+        )
+        footer_text = f"Generated by MMN Reconnaissance Framework | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | FOR AUTHORIZED USE ONLY"
+        elements.append(Paragraph(footer_text, footer_style))
+        
+        # Build PDF
+        doc.build(elements)
+        
+        print(f"{Fore.GREEN}[✓] PDF report saved: {filename}{Style.RESET_ALL}")
+        return filename
+        
+    except Exception as e:
+        print(f"{Fore.RED}[!] Failed to generate PDF report: {str(e)}{Style.RESET_ALL}")
+        return ""
+
+
 def generate_reports(all_results: Dict, formats: list = None) -> Dict[str, str]:
     """
     Generate reports in specified formats
     
     Args:
         all_results: Dictionary containing all reconnaissance results
-        formats: List of format strings ('cli', 'json', 'html')
+        formats: List of format strings ('cli', 'json', 'html', 'pdf')
         
     Returns:
         Dictionary with format -> filename mappings
     """
     if formats is None:
-        formats = ['cli', 'json', 'html']
+        formats = ['cli', 'json', 'html', 'pdf']
     
     report_files = {}
     
@@ -346,6 +637,11 @@ def generate_reports(all_results: Dict, formats: list = None) -> Dict[str, str]:
     if 'html' in formats:
         html_file = generate_html_report(all_results)
         report_files['html'] = html_file
+    
+    if 'pdf' in formats:
+        pdf_file = generate_pdf_report(all_results)
+        if pdf_file:
+            report_files['pdf'] = pdf_file
     
     return report_files
 

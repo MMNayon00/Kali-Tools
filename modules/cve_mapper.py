@@ -1,18 +1,111 @@
 """
 CVE Mapper Module
 Map detected services to CVE databases and display vulnerabilities
+Uses multiple CVE sources for comprehensive results
 NO EXPLOIT CODE - IDENTIFICATION ONLY
 """
 
 import requests
+import json
 from typing import Dict, List
 from colorama import Fore, Style
 import re
+import time
+
+
+def search_cve_nvd(product: str, version: str = None) -> List[Dict]:
+    """
+    Search CVE database using NVD (National Vulnerability Database) API 2.0
+    
+    Args:
+        product: Software product name
+        version: Optional version string
+        
+    Returns:
+        List of CVE entries
+    """
+    cves = []
+    
+    try:
+        # Clean product name
+        product_clean = product.lower().strip()
+        
+        # Build search URL for NVD API 2.0new API)
+        base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+        
+        # Build keyword query
+        if version and version != 'Unknown':
+            keywords = f"{product_clean} {version}"
+        else:
+            keywords = product_clean
+        
+        params = {
+            'keywordSearch': keywords,
+            'resultsPerPage': 10
+        }
+        
+        headers = {
+            'User-Agent': 'MMN-Framework/1.0'
+        }
+        
+        response = requests.get(base_url, params=params, headers=headers, timeout=20)
+        
+        if response.status_code == 200:
+            data = response.json()
+            vulnerabilities = data.get('vulnerabilities', [])
+            
+            for vuln in vulnerabilities:
+                cve_item = vuln.get('cve', {})
+                cve_id = cve_item.get('id', 'N/A')
+                
+                # Get description
+                descriptions = cve_item.get('descriptions', [])
+                description = descriptions[0].get('value', 'No description') if descriptions else 'No description'
+                
+                # Get CVSS scores
+                metrics = cve_item.get('metrics', {})
+                cvss_score = 0.0
+                severity = 'UNKNOWN'
+                
+                # Try CVSS v3.1 first, then v3.0, then v2.0
+                if 'cvssMetricV31' in metrics and metrics['cvssMetricV31']:
+                    cvss_data = metrics['cvssMetricV31'][0]['cvssData']
+                    cvss_score = cvss_data.get('baseScore', 0.0)
+                    severity = cvss_data.get('baseSeverity', 'UNKNOWN')
+                elif 'cvssMetricV30' in metrics and metrics['cvssMetricV30']:
+                    cvss_data = metrics['cvssMetricV30'][0]['cvssData']
+                    cvss_score = cvss_data.get('baseScore', 0.0)
+                    severity = cvss_data.get('baseSeverity', 'UNKNOWN')
+                elif 'cvssMetricV2' in metrics and metrics['cvssMetricV2']:
+                    cvss_data = metrics['cvssMetricV2'][0]['cvssData']
+                    cvss_score = cvss_data.get('baseScore', 0.0)
+                    severity = get_severity_from_cvss(cvss_score)
+                
+                # Get published date
+                published = cve_item.get('published', 'Unknown')
+                
+                cve_info = {
+                    'cve_id': cve_id,
+                    'summary': description[:300],  # Limit description length
+                    'cvss': cvss_score,
+                    'published': published,
+                    'modified': cve_item.get('lastModified', 'Unknown'),
+                    'severity': severity if severity != 'UNKNOWN' else get_severity_from_cvss(cvss_score)
+                }
+                cves.append(cve_info)
+        
+        # Rate limiting for API
+        time.sleep(0.6)  # NVD requires max 5 requests per 30 seconds without API key
+        
+    except Exception as e:
+        print(f"{Fore.YELLOW}  [!] NVD search failed: {str(e)}{Style.RESET_ALL}")
+    
+    return cves
 
 
 def search_cve_circl(product: str, version: str = None) -> List[Dict]:
     """
-    Search CVE database using CIRCL CVE Search API
+    Search CVE database using CIRCL CVE Search API (backup source)
     
     Args:
         product: Software product name
@@ -28,7 +121,7 @@ def search_cve_circl(product: str, version: str = None) -> List[Dict]:
         product_clean = product.lower().replace(' ', '_')
         
         # Build search URL
-        if version:
+        if version and version != 'Unknown':
             search_term = f"{product_clean} {version}"
         else:
             search_term = product_clean
@@ -40,27 +133,27 @@ def search_cve_circl(product: str, version: str = None) -> List[Dict]:
         if response.status_code == 200:
             data = response.json()
             
-            # Limit to top 5 most relevant CVEs
-            for cve_entry in data[:5]:
+            # Get top CVEs
+            for cve_entry in data[:10]:
                 cve_info = {
                     'cve_id': cve_entry.get('id', 'N/A'),
                     'summary': cve_entry.get('summary', 'No description available'),
-                    'cvss': cve_entry.get('cvss', 0.0),
+                    'cvss': float(cve_entry.get('cvss', 0.0)) if cve_entry.get('cvss') else 0.0,
                     'published': cve_entry.get('Published', 'Unknown'),
                     'modified': cve_entry.get('Modified', 'Unknown'),
-                    'severity': get_severity_from_cvss(cve_entry.get('cvss', 0.0))
+                    'severity': get_severity_from_cvss(float(cve_entry.get('cvss', 0.0)) if cve_entry.get('cvss') else 0.0)
                 }
                 cves.append(cve_info)
         
     except Exception as e:
-        print(f"{Fore.RED}  [!] CVE search failed for {product}: {str(e)}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}  [!] CIRCL search failed: {str(e)}{Style.RESET_ALL}")
     
     return cves
 
 
 def get_severity_from_cvss(cvss_score: float) -> str:
     """
-    Convert CVSS score to severity rating
+    Convert CVSS score to severity rating (CVSS v3.x standard)
     
     Args:
         cvss_score: CVSS score (0-10)
@@ -68,13 +161,20 @@ def get_severity_from_cvss(cvss_score: float) -> str:
     Returns:
         Severity rating string
     """
-    if cvss_score >= 9.0:
+    try:
+        score = float(cvss_score)
+    except:
+        score = 0.0
+        
+    if score == 0:
+        return "NONE"
+    elif score >= 9.0:
         return "CRITICAL"
-    elif cvss_score >= 7.0:
+    elif score >= 7.0:
         return "HIGH"
-    elif cvss_score >= 4.0:
+    elif score >= 4.0:
         return "MEDIUM"
-    elif cvss_score > 0:
+    elif score > 0:
         return "LOW"
     else:
         return "INFORMATIONAL"
@@ -102,31 +202,52 @@ def get_severity_color(severity: str) -> str:
 
 def map_service_to_cve(service_info: Dict) -> List[Dict]:
     """
-    Map a service to known CVEs
+    Map a service to known CVEs using multiple sources
     
     Args:
         service_info: Dictionary with service details (product, version, etc.)
         
     Returns:
-        List of related CVEs
+        List of related CVEs (deduplicated)
     """
     product = service_info.get('product', 'Unknown')
     version = service_info.get('version', 'Unknown')
     
-    # Skip if product or version is unknown
+    # Skip if product is unknown or generic
     if product == 'Unknown' or product == 'Generic Service':
         return []
     
     print(f"\n{Fore.YELLOW}[*] Searching CVEs for {product} {version}...{Style.RESET_ALL}")
     
-    cves = search_cve_circl(product, version)
+    all_cves = []
+    cve_ids_seen = set()
     
-    if cves:
-        print(f"{Fore.GREEN}[✓] Found {len(cves)} CVEs for {product}{Style.RESET_ALL}")
+    # Try NVD first (primary source)
+    print(f"{Fore.CYAN}  [*] Querying NVD database...{Style.RESET_ALL}")
+    nvd_cves = search_cve_nvd(product, version)
+    for cve in nvd_cves:
+        if cve['cve_id'] not in cve_ids_seen:
+            all_cves.append(cve)
+            cve_ids_seen.add(cve['cve_id'])
+    
+    # Fallback to CIRCL if NVD returns few results
+    if len(all_cves) < 3:
+        print(f"{Fore.CYAN}  [*] Querying CIRCL database...{Style.RESET_ALL}")
+        circl_cves = search_cve_circl(product, version)
+        for cve in circl_cves:
+            if cve['cve_id'] not in cve_ids_seen:
+                all_cves.append(cve)
+                cve_ids_seen.add(cve['cve_id'])
+    
+    if all_cves:
+        print(f"{Fore.GREEN}[✓] Found {len(all_cves)} CVEs for {product}{Style.RESET_ALL}")
     else:
-        print(f"{Fore.CYAN}[i] No CVEs found for {product}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}[i] No CVEs found for {product} {version}{Style.RESET_ALL}")
     
-    return cves
+    # Sort by CVSS score (highest first)
+    all_cves.sort(key=lambda x: x.get('cvss', 0), reverse=True)
+    
+    return all_cves
 
 
 def generate_cve_report(services: List[Dict]) -> Dict:

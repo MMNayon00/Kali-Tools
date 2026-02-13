@@ -135,10 +135,11 @@ def run_full_assessment(target: str) -> dict:
         print(f"\n{Fore.YELLOW}[*] Module 4/6: Port & Service Enumeration{Style.RESET_ALL}")
         target_ip = input_handler.resolve_target(target)
         if target_ip:
-            results['ports'] = port_service_enum.scan_ports(target_ip, port_range="common", rate_limit=0.1)
+            results['ports'], results['os_detection'] = port_service_enum.scan_ports(target_ip, port_range="common", rate_limit=0.1)
         else:
             print(f"{Fore.RED}[!] Could not resolve target IP, skipping port scan{Style.RESET_ALL}")
             results['ports'] = []
+            results['os_detection'] = {}
         
         # 5. Technology Fingerprinting
         print(f"\n{Fore.YELLOW}[*] Module 5/6: Technology Fingerprinting{Style.RESET_ALL}")
@@ -239,9 +240,10 @@ def run_custom_modules(target: str, module_selection: list) -> dict:
             print(f"\n{Fore.YELLOW}[*] Running: Port Scanning{Style.RESET_ALL}")
             target_ip = input_handler.resolve_target(target)
             if target_ip:
-                results['ports'] = port_service_enum.scan_ports(target_ip, port_range="common", rate_limit=0.1)
+                results['ports'], results['os_detection'] = port_service_enum.scan_ports(target_ip, port_range="common", rate_limit=0.1)
             else:
                 results['ports'] = []
+                results['os_detection'] = {}
         
         if 5 in module_selection:
             print(f"\n{Fore.YELLOW}[*] Running: Technology Fingerprinting{Style.RESET_ALL}")

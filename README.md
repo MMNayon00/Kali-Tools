@@ -18,10 +18,11 @@ This tool is provided for educational purposes and authorized security assessmen
 - 🎯 **Target Validation** - Smart input handling with domain/IP validation
 - 🔍 **Footprinting** - WHOIS, DNS enumeration, SSL/TLS inspection, HTTP header analysis
 - 🌐 **Asset Discovery** - Subdomain enumeration via Certificate Transparency and passive sources
-- 🔌 **Service Enumeration** - Rate-limited port scanning with service detection
+- 🔌 **Service Enumeration** - Full port scanning (1-65535) with service/version detection
+- 💻 **OS Detection** - Operating system fingerprinting based on TTL and open ports
 - 🛠️ **Technology Fingerprinting** - Web server, CMS, framework identification
-- 🔒 **CVE Mapping** - Automated vulnerability database lookups with CVSS scoring
-- 📊 **Reporting** - Structured CLI output with optional HTML reports
+- 🔒 **Enhanced CVE Mapping** - Multi-source vulnerability lookup (NVD, CIRCL) with CVSS v3.1 scoring
+- 📊 **Multi-Format Reporting** - CLI output, JSON, HTML, and PDF reports
 - 📝 **Activity Logging** - Full audit trail of reconnaissance activities
 
 ## Installation
@@ -87,10 +88,10 @@ Upon launch, you will see:
 | **Target Expansion** | DNS resolution, ASN identification |
 | **Footprinting** | WHOIS, DNS records, SSL/TLS, HTTP headers |
 | **Subdomain Enum** | Certificate Transparency, passive discovery |
-| **Port/Service Enum** | Rate-limited scanning with version detection |
+| **Port/Service Enum** | Full port scanning (1-65535) with service/version/OS detection |
 | **Tech Fingerprint** | Web technology stack identification |
-| **CVE Mapper** | Vulnerability database lookup |
-| **Report Generator** | Structured output and HTML reports |
+| **CVE Mapper** | Multi-source vulnerability database lookup (NVD, CIRCL) |
+| **Report Generator** | Structured output: CLI, JSON, HTML, and PDF reports |
 
 ### Example Workflow
 
@@ -151,9 +152,12 @@ MMN/
 
 ## Technical Details
 
-- **Port Scanning:** Rate-limited to avoid detection/disruption
+- **Port Scanning:** Supports common, top 100, custom range, or ALL ports (1-65535)
+- **OS Detection:** TTL-based fingerprinting combined with port-based heuristics
 - **Data Sources:** Public APIs (WHOIS, DNS, Certificate Transparency)
-- **CVE Lookup:** CIRCL.LU CVE Search API
+- **CVE Lookup:** NVD (National Vulnerability Database) + CIRCL CVE Search API
+- **CVSS Scoring:** Full CVSS v3.1, v3.0, and v2.0 support with severity classification
+- **Report Formats:** CLI (colored terminal), JSON, HTML, and PDF
 - **Logging:** All actions logged to `reports/` directory
 
 ## Troubleshooting
