@@ -32,16 +32,34 @@ This tool is provided for educational purposes and authorized security assessmen
 - pip package manager
 - Internet connection for external lookups
 
-### Setup
+### Quick Setup
 
 ```bash
 # Clone or download the repository
-cd MMN
+cd MMN-Framework
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # macOS/Linux
+# venv\Scripts\activate   # Windows
 
 # Install dependencies
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 
 # Run the tool
+python3 main.py
+```
+
+### 🐉 Kali Linux Users
+
+**See detailed guide:** [KALI_INSTALL.md](KALI_INSTALL.md)
+
+Quick start for Kali:
+```bash
+cd ~/MMN-Framework
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 python3 main.py
 ```
 
