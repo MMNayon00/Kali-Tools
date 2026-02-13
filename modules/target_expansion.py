@@ -5,8 +5,41 @@ DNS resolution, IP discovery, ASN and hosting provider identification
 
 import socket
 import dns.resolver
+import re
 from typing import Dict, List, Optional
 from colorama import Fore, Style
+
+
+def is_valid_domain(target: str) -> bool:
+    """
+    Check if target is a valid domain name
+    
+    Args:
+        target: String to validate
+        
+    Returns:
+        True if valid domain, False otherwise
+    """
+    # Basic domain validation
+    domain_pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+    return bool(re.match(domain_pattern, target))
+
+
+def is_valid_ip(target: str) -> bool:
+    """
+    Check if target is a valid IP address
+    
+    Args:
+        target: String to validate
+        
+    Returns:
+        True if valid IP, False otherwise
+    """
+    try:
+        socket.inet_aton(target)
+        return True
+    except socket.error:
+        return False
 
 
 def dns_resolution(target: str) -> Dict[str, List[str]]:
@@ -25,25 +58,49 @@ def dns_resolution(target: str) -> Dict[str, List[str]]:
         'MX': [],
         'NS': [],
         'TXT': [],
-        'CNAME': []
+        'CNAME': [],
+        'SOA': []
     }
     
     if not target:
         return results
     
+    # Skip DNS resolution for IP addresses
+    if is_valid_ip(target):
+        print(f"\n{Fore.CYAN}[i] Target is an IP address, skipping DNS resolution{Style.RESET_ALL}")
+        return results
+    
     print(f"\n{Fore.YELLOW}[*] Performing DNS resolution...{Style.RESET_ALL}")
+    
+    # Configure DNS resolver with multiple nameservers
+    resolver = dns.resolver.Resolver()
+    resolver.nameservers = ['8.8.8.8', '8.8.4.4', '1.1.1.1', '1.0.0.1']  # Google + Cloudflare DNS
+    resolver.timeout = 10
+    resolver.lifetime = 10
     
     # Query each record type
     for record_type in results.keys():
         try:
-            answers = dns.resolver.resolve(target, record_type, lifetime=5)
+            answers = resolver.resolve(target, record_type)
             for rdata in answers:
-                results[record_type].append(str(rdata))
-            print(f"{Fore.GREEN}  [✓] {record_type}: {len(results[record_type])} records{Style.RESET_ALL}")
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers):
+                record_value = str(rdata).rstrip('.')
+                results[record_type].append(record_value)
+            if results[record_type]:
+                print(f"{Fore.GREEN}  [✓] {record_type}: {len(results[record_type])} records{Style.RESET_ALL}")
+        except dns.resolver.NoAnswer:
+            # No records of this type - normal, don't print error
             pass
+        except dns.resolver.NXDOMAIN:
+            print(f"{Fore.RED}  [!] Domain does not exist{Style.RESET_ALL}")
+            break
+        except dns.resolver.NoNameservers:
+            print(f"{Fore.RED}  [!] No nameservers available{Style.RESET_ALL}")
+            break
+        except dns.resolver.Timeout:
+            print(f"{Fore.YELLOW}  [!] {record_type} lookup timed out{Style.RESET_ALL}")
         except Exception as e:
-            print(f"{Fore.RED}  [!] {record_type} lookup failed: {str(e)}{Style.RESET_ALL}")
+            # Silently continue for other errors
+            pass
     
     return results
 
@@ -53,22 +110,42 @@ def get_ip_addresses(target: str) -> List[str]:
     Get all IP addresses associated with target
     
     Args:
-        target: Domain name
+        target: Domain name or IP address
         
     Returns:
         List of IP addresses
     """
     ip_list = []
     
+    # If target is already an IP, return it
+    if is_valid_ip(target):
+        return [target]
+    
     try:
-        # Get all addresses
-        addr_info = socket.getaddrinfo(target, None)
+        # Try standard resolution first
+        addr_info = socket.getaddrinfo(target, None, socket.AF_INET)
         for info in addr_info:
             ip = info[4][0]
             if ip not in ip_list:
                 ip_list.append(ip)
-    except socket.gaierror:
-        pass
+    except socket.gaierror as e:
+        print(f"{Fore.YELLOW}  [!] Could not resolve {target}: {str(e)}{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.RED}  [!] Error resolving {target}: {str(e)}{Style.RESET_ALL}")
+    
+    # Fallback: try DNS A record lookup
+    if not ip_list and is_valid_domain(target):
+        try:
+            resolver = dns.resolver.Resolver()
+            resolver.nameservers = ['8.8.8.8', '1.1.1.1']
+            resolver.timeout = 5
+            answers = resolver.resolve(target, 'A')
+            for rdata in answers:
+                ip = str(rdata)
+                if ip not in ip_list:
+                    ip_list.append(ip)
+        except:
+            pass
     
     return ip_list
 
@@ -149,20 +226,29 @@ def expand_target(target: str) -> Dict:
     
     expansion_data = {
         'target': target,
+        'target_type': 'domain' if is_valid_domain(target) else 'ip',
         'dns_records': {},
         'ip_addresses': [],
         'reverse_dns': None,
         'hosting_provider': {}
     }
     
-    # DNS resolution
-    expansion_data['dns_records'] = dns_resolution(target)
+    # DNS resolution (only for domains)
+    if is_valid_domain(target):
+        expansion_data['dns_records'] = dns_resolution(target)
+    else:
+        print(f"\n{Fore.CYAN}[i] Target is an IP address, DNS resolution skipped{Style.RESET_ALL}")
     
     # Get IP addresses
     print(f"\n{Fore.YELLOW}[*] Discovering IP addresses...{Style.RESET_ALL}")
     expansion_data['ip_addresses'] = get_ip_addresses(target)
-    for ip in expansion_data['ip_addresses']:
-        print(f"{Fore.GREEN}  [✓] {ip}{Style.RESET_ALL}")
+    
+    if expansion_data['ip_addresses']:
+        for ip in expansion_data['ip_addresses']:
+            print(f"{Fore.GREEN}  [✓] {ip}{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.RED}  [!] Could not resolve any IP addresses{Style.RESET_ALL}")
+        return expansion_data
     
     # Reverse DNS
     if expansion_data['ip_addresses']:
@@ -171,6 +257,8 @@ def expand_target(target: str) -> Dict:
         expansion_data['reverse_dns'] = reverse_dns_lookup(primary_ip)
         if expansion_data['reverse_dns']:
             print(f"{Fore.GREEN}  [✓] {expansion_data['reverse_dns']}{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.CYAN}  [i] No reverse DNS record found{Style.RESET_ALL}")
         
         # Hosting provider
         print(f"\n{Fore.YELLOW}[*] Identifying hosting provider...{Style.RESET_ALL}")
