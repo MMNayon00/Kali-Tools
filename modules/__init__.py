@@ -10,5 +10,6 @@ __all__ = [
     "port_service_enum",
     "tech_fingerprint",
     "cve_mapper",
-    "report_generator"
+    "report_generator",
+    "js_hidden_doc_intel",
 ]

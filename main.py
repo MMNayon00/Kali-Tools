@@ -25,6 +25,7 @@ try:
     from modules import tech_fingerprint
     from modules import cve_mapper
     from modules import report_generator
+    from modules import js_hidden_doc_intel
 except ImportError as e:
     print(f"{Fore.RED}[!] Error importing modules: {str(e)}{Style.RESET_ALL}")
     print(f"{Fore.YELLOW}[*] Make sure all module files are present in the 'modules' directory{Style.RESET_ALL}")
@@ -93,8 +94,9 @@ def display_module_menu():
     print(f"{Fore.WHITE}[4] Port & Service Scanning{Style.RESET_ALL}")
     print(f"{Fore.WHITE}[5] Technology Fingerprinting{Style.RESET_ALL}")
     print(f"{Fore.WHITE}[6] CVE Vulnerability Mapping{Style.RESET_ALL}")
+    print(f"{Fore.WHITE}[7] JS Hidden Document Intelligence (v2){Style.RESET_ALL}")
     print(f"{Fore.WHITE}[0] Back to Main Menu{Style.RESET_ALL}\n")
-    
+
     print(f"{Fore.YELLOW}Enter module numbers separated by commas (e.g., 1,2,4):{Style.RESET_ALL}")
 
 
@@ -146,13 +148,17 @@ def run_full_assessment(target: str) -> dict:
         results['technologies'] = tech_fingerprint.fingerprint_web_technology(target)
         
         # 6. CVE Mapping
-        print(f"\n{Fore.YELLOW}[*] Module 6/6: CVE Vulnerability Mapping{Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}[*] Module 6/7: CVE Vulnerability Mapping{Style.RESET_ALL}")
         if results.get('ports'):
             results['cve_report'] = cve_mapper.generate_cve_report(results['ports'])
         else:
             print(f"{Fore.YELLOW}[!] No open ports to analyze for CVEs{Style.RESET_ALL}")
             results['cve_report'] = {'total_services': 0, 'vulnerable_services': 0, 'total_cves': 0}
-        
+
+        # 7. JS Hidden Document Intelligence
+        print(f"\n{Fore.YELLOW}[*] Module 7/7: JS Hidden Document Intelligence{Style.RESET_ALL}")
+        results['js_intelligence'] = js_hidden_doc_intel.run_js_document_intelligence(target)
+
         print(f"\n{Fore.GREEN}{'='*80}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}[✓] Full assessment complete!{Style.RESET_ALL}")
         print(f"{Fore.GREEN}{'='*80}{Style.RESET_ALL}")
@@ -255,9 +261,14 @@ def run_custom_modules(target: str, module_selection: list) -> dict:
                 results['cve_report'] = cve_mapper.generate_cve_report(results['ports'])
             else:
                 print(f"{Fore.YELLOW}[!] Port scanning required for CVE mapping{Style.RESET_ALL}")
-        
+
+        if 7 in module_selection:
+            print(f"\n{Fore.YELLOW}[*] Running: JS Hidden Document Intelligence{Style.RESET_ALL}")
+            js_result = js_hidden_doc_intel.run_js_document_intelligence(target)
+            results['js_intelligence'] = js_result
+
         print(f"\n{Fore.GREEN}[✓] Selected modules complete!{Style.RESET_ALL}")
-        
+
     except KeyboardInterrupt:
         print(f"\n\n{Fore.YELLOW}[!] Scan interrupted by user{Style.RESET_ALL}")
     except Exception as e:
