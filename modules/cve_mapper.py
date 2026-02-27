@@ -7,10 +7,34 @@ NO EXPLOIT CODE - IDENTIFICATION ONLY
 
 import requests
 import json
+import time
 from typing import Dict, List
 from colorama import Fore, Style
 import re
-import time
+
+
+def _cve_get(url: str, params: dict = None, headers: dict = None,
+             timeout: int = 20, retries: int = 3) -> requests.Response | None:
+    """GET with retry + exponential back-off for CVE API calls."""
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+            if resp.status_code == 200:
+                return resp
+            if resp.status_code == 429:          # rate-limited
+                wait = 10 * attempt
+                time.sleep(wait)
+                continue
+            if resp.status_code in (500, 502, 503, 504):
+                time.sleep(3 * attempt)
+                continue
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            pass
+        except Exception:
+            pass
+        if attempt < retries:
+            time.sleep(3 * attempt)
+    return None
 
 
 def search_cve_nvd(product: str, version: str = None) -> List[Dict]:
@@ -47,10 +71,10 @@ def search_cve_nvd(product: str, version: str = None) -> List[Dict]:
         headers = {
             'User-Agent': 'MMN-Framework/1.0'
         }
-        
-        response = requests.get(base_url, params=params, headers=headers, timeout=20)
-        
-        if response.status_code == 200:
+
+        response = _cve_get(base_url, params=params, headers=headers, timeout=20)
+
+        if response is not None:
             data = response.json()
             vulnerabilities = data.get('vulnerabilities', [])
             
@@ -94,9 +118,9 @@ def search_cve_nvd(product: str, version: str = None) -> List[Dict]:
                 }
                 cves.append(cve_info)
         
-        # Rate limiting for API
-        time.sleep(0.6)  # NVD requires max 5 requests per 30 seconds without API key
-        
+        # NVD enforces 5 requests per 30 seconds without an API key (= 6 s/request)
+        time.sleep(6)
+
     except Exception as e:
         print(f"{Fore.YELLOW}  [!] NVD search failed: {str(e)}{Style.RESET_ALL}")
     
@@ -127,13 +151,17 @@ def search_cve_circl(product: str, version: str = None) -> List[Dict]:
             search_term = product_clean
         
         url = f"https://cve.circl.lu/api/search/{search_term}"
-        
-        response = requests.get(url, timeout=15)
-        
-        if response.status_code == 200:
-            data = response.json()
+
+        response = _cve_get(url, timeout=15)
+
+        if response is not None:
+            try:
+                data = response.json()
+            except ValueError:
+                data = []
+            if not isinstance(data, list):
+                data = []
             
-            # Get top CVEs
             for cve_entry in data[:10]:
                 cve_info = {
                     'cve_id': cve_entry.get('id', 'N/A'),

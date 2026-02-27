@@ -22,8 +22,6 @@ try:
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
-    print(f"{Fore.YELLOW}[!] reportlab not installed - PDF generation disabled{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}[*] Install with: pip install reportlab{Style.RESET_ALL}")
 
 
 def generate_cli_report(all_results: Dict) -> None:
@@ -346,6 +344,7 @@ def generate_pdf_report(all_results: Dict, filename: str = None) -> str:
         print(f"{Fore.RED}[!] PDF generation requires reportlab library{Style.RESET_ALL}")
         print(f"{Fore.CYAN}[*] Install with: pip install reportlab{Style.RESET_ALL}")
         return ""
+
     
     # Create reports directory
     Path("reports").mkdir(exist_ok=True)

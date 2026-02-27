@@ -3,10 +3,13 @@ Port and Service Enumeration Module
 Rate-limited port scanning with service detection, banner grabbing, and OS detection
 """
 
+import re
 import socket
+import ssl
 import time
 import struct
 import platform
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
 from colorama import Fore, Style
 
@@ -69,36 +72,54 @@ def check_port(ip: str, port: int, timeout: float = 1.0) -> bool:
 
 def grab_banner(ip: str, port: int, timeout: float = 2.0) -> str:
     """
-    Attempt to grab service banner (read-only)
-    
-    Args:
-        ip: Target IP address
-        port: Port number
-        timeout: Connection timeout in seconds
-        
-    Returns:
-        Banner string or empty string
+    Attempt to grab service banner (read-only).
+    Handles both plain-text and SSL/TLS ports.
     """
     banner = ""
-    
+    SSL_PORTS = {443, 8443, 465, 993, 995, 636}
+    HTTP_PORTS = {80, 8080, 8000, 8008, 8081}
+    HTTPS_PORTS = {443, 8443}
+
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        sock.connect((ip, port))
-        
-        # Try to receive banner
-        try:
-            banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()
-        except:
-            # Some services need a request first (like HTTP)
-            if port in [80, 8080, 8443]:
-                sock.send(b'HEAD / HTTP/1.0\r\n\r\n')
+        raw_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        raw_sock.settimeout(timeout)
+        raw_sock.connect((ip, port))
+
+        # Wrap in SSL if needed
+        if port in SSL_PORTS:
+            try:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                sock = ctx.wrap_socket(raw_sock, server_hostname=ip)
+            except ssl.SSLError:
+                # Try fallback without any verification
+                ctx = ssl._create_unverified_context()
+                sock = ctx.wrap_socket(raw_sock, server_hostname=ip)
+        else:
+            sock = raw_sock
+
+        # For HTTP/HTTPS ports, send a HEAD request to get a banner
+        if port in HTTP_PORTS or port in HTTPS_PORTS:
+            try:
+                sock.send(b'HEAD / HTTP/1.0\r\nHost: ' + ip.encode() + b'\r\n\r\n')
                 banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()
-        
-        sock.close()
-    except:
+            except Exception:
+                pass
+        else:
+            # For other services, just read the banner they send
+            try:
+                banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()
+            except Exception:
+                pass
+
+        try:
+            sock.close()
+        except Exception:
+            pass
+    except Exception:
         pass
-    
+
     return banner
 
 
@@ -129,29 +150,24 @@ def detect_service_version(banner: str, port: int) -> Dict[str, str]:
         service_info['service'] = 'SSH'
         if 'openssh' in banner_lower:
             service_info['product'] = 'OpenSSH'
-            # Extract version
-            import re
             version_match = re.search(r'openssh[_\s]*([\d.]+\w*)', banner_lower)
             if version_match:
                 service_info['version'] = version_match.group(1)
-    
+
     # HTTP/Web servers
     elif 'http' in banner_lower or port in [80, 443, 8080, 8443]:
         if 'apache' in banner_lower:
             service_info['product'] = 'Apache'
-            import re
             version_match = re.search(r'apache/([\d.]+)', banner_lower)
             if version_match:
                 service_info['version'] = version_match.group(1)
         elif 'nginx' in banner_lower:
             service_info['product'] = 'nginx'
-            import re
             version_match = re.search(r'nginx/([\d.]+)', banner_lower)
             if version_match:
                 service_info['version'] = version_match.group(1)
         elif 'microsoft-iis' in banner_lower:
             service_info['product'] = 'Microsoft IIS'
-            import re
             version_match = re.search(r'microsoft-iis/([\d.]+)', banner_lower)
             if version_match:
                 service_info['version'] = version_match.group(1)
@@ -295,50 +311,77 @@ def scan_ports(target: str, port_range: str = "common", rate_limit: float = 0.1)
     
     print(f"\n{Fore.YELLOW}[*] Scanning {len(ports_to_scan)} ports on {target}...{Style.RESET_ALL}")
     print(f"{Fore.YELLOW}[*] Rate limit: {rate_limit}s between scans{Style.RESET_ALL}")
-    
+
     open_ports = []
-    scanned = 0
     start_time = time.time()
-    
-    for port in ports_to_scan:
-        scanned += 1
-        
-        # Progress indicator every 50 ports (or every 10 for small scans)
-        progress_interval = 50 if len(ports_to_scan) > 100 else 10
-        if scanned % progress_interval == 0 or scanned == len(ports_to_scan):
-            elapsed = time.time() - start_time
-            rate = scanned / elapsed if elapsed > 0 else 0
-            remaining = (len(ports_to_scan) - scanned) / rate if rate > 0 else 0
-            print(f"{Fore.YELLOW}[*] Progress: {scanned}/{len(ports_to_scan)} ports "
-                  f"({(scanned/len(ports_to_scan)*100):.1f}%) | "
-                  f"ETA: {remaining/60:.1f} minutes{Style.RESET_ALL}")
-        
-        if check_port(target, port):
-            print(f"{Fore.GREEN}[✓] Port {port} is OPEN{Style.RESET_ALL}")
-            
-            # Grab banner
-            banner = grab_banner(target, port)
-            
-            # Detect service
-            service_info = detect_service_version(banner, port)
-            
-            port_data = {
-                'port': port,
-                'state': 'open',
-                'service': service_info['service'],
-                'product': service_info['product'],
-                'version': service_info['version'],
-                'banner': banner[:200] if banner else ''  # Limit banner size
-            }
-            
-            open_ports.append(port_data)
-            
-            print(f"{Fore.GREEN}    Service: {service_info['service']} | "
-                  f"Product: {service_info['product']} | "
-                  f"Version: {service_info['version']}{Style.RESET_ALL}")
-        
-        # Rate limiting
-        time.sleep(rate_limit)
+
+    # Use concurrent scanning for large port ranges (> 20 ports)
+    if len(ports_to_scan) > 20:
+        max_workers = min(50, len(ports_to_scan))
+        print(f"{Fore.YELLOW}[*] Using {max_workers} concurrent workers...{Style.RESET_ALL}")
+
+        def _scan_port(port: int):
+            if check_port(target, port):
+                banner = grab_banner(target, port)
+                service_info = detect_service_version(banner, port)
+                return {
+                    'port': port,
+                    'state': 'open',
+                    'service': service_info['service'],
+                    'product': service_info['product'],
+                    'version': service_info['version'],
+                    'banner': banner[:200] if banner else ''
+                }
+            return None
+
+        scanned = 0
+        progress_interval = max(10, len(ports_to_scan) // 20)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_scan_port, p): p for p in ports_to_scan}
+            for future in as_completed(futures):
+                scanned += 1
+                if scanned % progress_interval == 0 or scanned == len(ports_to_scan):
+                    elapsed = time.time() - start_time
+                    rate = scanned / elapsed if elapsed > 0 else 0
+                    remaining = (len(ports_to_scan) - scanned) / rate if rate > 0 else 0
+                    print(f"{Fore.YELLOW}[*] Progress: {scanned}/{len(ports_to_scan)} ports "
+                          f"({(scanned / len(ports_to_scan) * 100):.1f}%) | "
+                          f"ETA: {remaining / 60:.1f} minutes{Style.RESET_ALL}")
+                result = future.result()
+                if result:
+                    open_ports.append(result)
+                    print(f"{Fore.GREEN}[✓] Port {result['port']} is OPEN "
+                          f"({result['service']} | {result['product']} {result['version']}){Style.RESET_ALL}")
+                time.sleep(rate_limit)  # light rate-limiting per completed future
+        open_ports.sort(key=lambda x: x['port'])
+    else:
+        # Sequential scan for small port lists (e.g. 'common' = 16 ports)
+        for i, port in enumerate(ports_to_scan, 1):
+            if i % 10 == 0 or i == len(ports_to_scan):
+                elapsed = time.time() - start_time
+                rate = i / elapsed if elapsed > 0 else 0
+                remaining = (len(ports_to_scan) - i) / rate if rate > 0 else 0
+                print(f"{Fore.YELLOW}[*] Progress: {i}/{len(ports_to_scan)} ports "
+                      f"({(i / len(ports_to_scan) * 100):.1f}%) | "
+                      f"ETA: {remaining / 60:.1f} minutes{Style.RESET_ALL}")
+
+            if check_port(target, port):
+                print(f"{Fore.GREEN}[✓] Port {port} is OPEN{Style.RESET_ALL}")
+                banner = grab_banner(target, port)
+                service_info = detect_service_version(banner, port)
+                port_data = {
+                    'port': port,
+                    'state': 'open',
+                    'service': service_info['service'],
+                    'product': service_info['product'],
+                    'version': service_info['version'],
+                    'banner': banner[:200] if banner else ''
+                }
+                open_ports.append(port_data)
+                print(f"{Fore.GREEN}    Service: {service_info['service']} | "
+                      f"Product: {service_info['product']} | "
+                      f"Version: {service_info['version']}{Style.RESET_ALL}")
+            time.sleep(rate_limit)
     
     elapsed_total = time.time() - start_time
     print(f"\n{Fore.GREEN}[✓] Scan complete: {len(open_ports)} open ports found{Style.RESET_ALL}")

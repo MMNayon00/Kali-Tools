@@ -231,12 +231,10 @@ def http_header_analysis(target: str) -> Dict:
         'protocol': None
     }
     
-    # Try different protocols and URLs
+    # Try HTTPS first, fall back to HTTP
     attempts = [
         f"https://{target}",
         f"http://{target}",
-        f"https://{target}:443",
-        f"http://{target}:80"
     ]
     
     for url in attempts:
