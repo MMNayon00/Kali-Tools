@@ -1,199 +1,240 @@
-# MMN - Modular Reconnaissance & Assessment Framework
+# MMN — Modular Reconnaissance & Assessment Framework
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-Educational-green.svg)
+![Platform](https://img.shields.io/badge/platform-Kali%20%7C%20Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
 
 **FOR AUTHORIZED USE ONLY**
 
-MMN is a modular reconnaissance and vulnerability assessment framework designed for security professionals conducting authorized penetration tests. This tool automates footprinting, asset discovery, and CVE identification without performing exploitation.
+MMN is a modular reconnaissance and vulnerability-assessment framework for security professionals conducting **authorized** penetration tests. It automates footprinting, asset discovery, technology fingerprinting, CVE identification, and JavaScript-based hidden-document intelligence — **without performing any exploitation**.
+
+---
 
 ## ⚠️ Legal Disclaimer
 
-**Use only on systems you own or have explicit permission to test. Unauthorized use is illegal.**
+**Use only on systems you own or have explicit written permission to test. Unauthorized use is illegal.**
 
-This tool is provided for educational purposes and authorized security assessments only. The authors accept no liability for misuse or damage caused by this program. Always obtain written authorization before conducting security assessments.
+This tool is provided for educational purposes and authorized security assessments only. The authors accept no liability for misuse or damage. Always obtain written authorization before conducting security assessments.
 
-## Features
+---
 
-- 🎯 **Target Validation** - Smart input handling with domain/IP validation
-- 🔍 **Footprinting** - WHOIS, DNS enumeration, SSL/TLS inspection, HTTP header analysis
-- 🌐 **Asset Discovery** - Subdomain enumeration via Certificate Transparency and passive sources
-- 🔌 **Service Enumeration** - Full port scanning (1-65535) with service/version detection
-- 💻 **OS Detection** - Operating system fingerprinting based on TTL and open ports
-- 🛠️ **Technology Fingerprinting** - Web server, CMS, framework identification
-- 🔒 **Enhanced CVE Mapping** - Multi-source vulnerability lookup (NVD, CIRCL) with CVSS v3.1 scoring
-- 📊 **Multi-Format Reporting** - CLI output, JSON, HTML, and PDF reports
-- 📝 **Activity Logging** - Full audit trail of reconnaissance activities
+## ✨ Features
 
-## Installation
+- 🎯 **Target Validation** — smart input handling with domain/IP validation
+- 🌐 **Target Expansion** — DNS resolution (A, AAAA, MX, NS, TXT, CNAME, SOA), reverse DNS, hosting-provider identification
+- 🔍 **Footprinting** — WHOIS, SSL/TLS certificate inspection, HTTP header & security-header analysis
+- 🔎 **Subdomain Enumeration** — Certificate Transparency (crt.sh), HackerTarget, AlienVault OTX + optional brute force
+- 🔌 **Port & Service Enumeration** — port scanning with banner grabbing and service/version detection
+- 💻 **OS Detection** — TTL- and port-based operating-system fingerprinting
+- 🛠️ **Technology Fingerprinting** — web server, CMS, framework, and JS-library identification
+- 🔒 **CVE Mapping** — multi-source vulnerability lookup (NVD + CIRCL) with CVSS scoring and severity ranking
+- 🧠 **JS Hidden Document Intelligence (v2)** — discovers undocumented endpoints, hidden/exposed documents, and outdated JS libraries from JavaScript, and extracts PDF metadata
+- 📊 **Multi-Format Reporting** — colored CLI, JSON, a full **interactive HTML report**, and a professional **PDF**
+- 📝 **Audit Logging** — full activity trail for every scan
 
-### Prerequisites
+---
 
-- Python 3.8 or higher
-- pip package manager
-- Internet connection for external lookups
+## 📦 Requirements
 
-### Quick Setup
+- **Python 3.8+**
+- **pip**
+- Internet connection (for WHOIS, DNS, Certificate Transparency, and CVE lookups)
+
+---
+
+## 🚀 Installation & Run — Step by Step
+
+These commands work as-is on **Kali / Linux / macOS**. (Windows notes are below.)
 
 ```bash
-# Clone or download the repository
-cd MMN-Framework
+# 1. Clone the repository
+git clone https://github.com/MMNayon00/Kali-Tools.git
+cd Kali-Tools
 
-# Create virtual environment
+# 2. Create an isolated virtual environment (recommended)
 python3 -m venv venv
-source venv/bin/activate  # macOS/Linux
-# venv\Scripts\activate   # Windows
 
-# Install dependencies
+# 3. Activate it
+source venv/bin/activate          # Linux / macOS / Kali
+
+# 4. Upgrade pip and install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
 
-# Run the tool
+# 5. Run the framework
 python3 main.py
 ```
 
-### 🐉 Kali Linux Users
+### 🐉 Kali Linux (externally-managed Python)
 
-**See detailed guide:** [KALI_INSTALL.md](KALI_INSTALL.md)
+Recent Kali/Debian releases block system-wide `pip` installs (PEP 668). **Use the virtual-environment steps above** — they avoid the issue entirely. If you deliberately want a system-wide install instead:
 
-Quick start for Kali:
 ```bash
-cd ~/MMN-Framework
-python3 -m venv venv
-source venv/bin/activate
+pip install -r requirements.txt --break-system-packages
+```
+
+See [KALI_INSTALL.md](KALI_INSTALL.md) for the full Kali guide.
+
+### 🪟 Windows
+
+```powershell
+git clone https://github.com/MMNayon00/Kali-Tools.git
+cd Kali-Tools
+python -m venv venv
+venv\Scripts\activate
+pip install --upgrade pip
 pip install -r requirements.txt
-python3 main.py
+python main.py
 ```
 
-## Usage
+### Deactivating the environment
 
-### Basic Execution
+```bash
+deactivate
+```
+
+---
+
+## 🕹️ Usage Walkthrough
+
+Launch the tool and follow the interactive prompts:
 
 ```bash
 python3 main.py
 ```
 
-Upon launch, you will see:
-1. **MMN ASCII Banner** - Displayed at the top
-2. **Legal Disclaimer** - Authorization warning
-3. **Target Input** - Enter IP or domain
-4. **Module Selection** - Choose which modules to run
-5. **Execution** - Automated reconnaissance
-6. **Results** - Formatted output with findings
+1. **Banner & legal disclaimer** are displayed.
+2. Confirm authorization by typing `yes`.
+3. Enter your **target** (domain or IP), e.g. `example.com`.
+4. Choose a scan mode from the **main menu**:
 
-### Module Overview
+   ```
+   [1] Full Assessment (All Modules)
+   [2] Basic Footprinting (Quick Scan)
+   [3] Custom Module Selection
+   [0] Exit
+   ```
+
+5. For **Custom Module Selection [3]**, pick any combination of modules by number:
+
+   ```
+   [1] Target Expansion (DNS, IP, ASN)
+   [2] Footprinting (WHOIS, SSL, HTTP)
+   [3] Subdomain Enumeration
+   [4] Port & Service Scanning
+   [5] Technology Fingerprinting
+   [6] CVE Vulnerability Mapping
+   [7] JS Hidden Document Intelligence (v2)
+   [0] Back to Main Menu
+
+   Example: 1,2,4,7
+   ```
+
+6. Reports are generated automatically and saved to the **`reports/`** directory.
+
+### Reports produced
+
+| Scan mode | CLI | JSON | HTML | PDF |
+|-----------|:---:|:----:|:----:|:---:|
+| Full Assessment | ✅ | ✅ | ✅ | ✅ |
+| Basic Footprinting | ✅ | ✅ | ✅ | — |
+| Custom Selection | ✅ | ✅ | ✅ | — |
+
+### Viewing the HTML report
+
+```bash
+# Linux
+xdg-open reports/mmn_report_*.html
+# macOS
+open reports/mmn_report_*.html
+# Windows
+start reports\mmn_report_*.html
+```
+
+The HTML report is a self-contained dashboard: a summary card grid plus every finding from every module that ran — target expansion, DNS records, WHOIS, SSL/TLS, HTTP & security headers, subdomains, OS detection, open ports with banners, the technology stack, full CVE detail per service, and the complete JS Hidden Document Intelligence section with PDF metadata.
+
+---
+
+## 🧩 Modules
 
 | Module | Description |
 |--------|-------------|
-| **Input Handler** | Validates and sanitizes target input |
-| **Target Expansion** | DNS resolution, ASN identification |
-| **Footprinting** | WHOIS, DNS records, SSL/TLS, HTTP headers |
-| **Subdomain Enum** | Certificate Transparency, passive discovery |
-| **Port/Service Enum** | Full port scanning (1-65535) with service/version/OS detection |
-| **Tech Fingerprint** | Web technology stack identification |
-| **CVE Mapper** | Multi-source vulnerability database lookup (NVD, CIRCL) |
-| **Report Generator** | Structured output: CLI, JSON, HTML, and PDF reports |
+| **input_handler** | Validates and sanitizes target input |
+| **target_expansion** | DNS resolution, reverse DNS, hosting-provider identification |
+| **footprinting** | WHOIS, SSL/TLS certificate, HTTP headers & security headers |
+| **subdomain_enum** | crt.sh, HackerTarget, AlienVault OTX, optional brute force |
+| **port_service_enum** | Port scanning, banner grabbing, service/version + OS detection |
+| **tech_fingerprint** | Web server, CMS, framework, and library detection |
+| **cve_mapper** | NVD + CIRCL CVE lookup with CVSS scoring |
+| **js_hidden_doc_intel** | JS endpoint/document discovery, outdated libs, PDF metadata (v2) |
+| **report_generator** | CLI, JSON, HTML, and PDF report output |
 
-### Example Workflow
+---
 
-```
-[MMN Banner Displayed]
-
-⚠️  AUTHORIZATION WARNING
-Use only on systems you own or have explicit permission to test.
-
-Enter target (IP or domain): example.com
-
-Select modules to run:
-[1] Full Assessment (All Modules)
-[2] Basic Footprinting
-[3] Custom Module Selection
-[0] Exit
-
-Choice: 1
-
-[Executing reconnaissance...]
-[Results displayed with severity ratings]
-[Report saved to reports/]
-```
-
-## Project Structure
+## 📁 Project Structure
 
 ```
-MMN/
-├── main.py                      # Main controller
-├── requirements.txt             # Python dependencies
-├── README.md                    # Documentation
+Kali-Tools/
+├── main.py                       # Interactive controller / entry point
+├── requirements.txt              # Python dependencies
+├── README.md                     # This file
+├── KALI_INSTALL.md               # Kali-specific install guide
+├── USAGE.md                      # Extended usage notes
+├── CHANGELOG.md                  # Version history
+├── LICENSE
 ├── modules/
-│   ├── input_handler.py         # Target validation
-│   ├── target_expansion.py      # DNS & IP resolution
-│   ├── footprinting.py          # WHOIS, DNS, SSL, HTTP
-│   ├── subdomain_enum.py        # Subdomain discovery
-│   ├── port_service_enum.py     # Port scanning
-│   ├── tech_fingerprint.py      # Technology detection
-│   ├── cve_mapper.py            # Vulnerability lookup
-│   └── report_generator.py      # Output formatting
-└── reports/                     # Generated reports
+│   ├── input_handler.py
+│   ├── target_expansion.py
+│   ├── footprinting.py
+│   ├── subdomain_enum.py
+│   ├── port_service_enum.py
+│   ├── tech_fingerprint.py
+│   ├── cve_mapper.py
+│   ├── js_hidden_doc_intel.py    # v2 JS intelligence module
+│   └── report_generator.py
+└── reports/                      # Generated reports (git-ignored)
 ```
 
-## Ethical Guidelines
+---
 
-✅ **Permitted Use:**
-- Systems you own
-- Systems with written authorization
-- Educational lab environments
-- Bug bounty programs (within scope)
+## 🔧 Troubleshooting
 
-❌ **Prohibited:**
-- Unauthorized scanning
-- Exploitation attempts
-- Denial of service attacks
-- Credential brute forcing
-- Any illegal activity
-
-## Technical Details
-
-- **Port Scanning:** Supports common, top 100, custom range, or ALL ports (1-65535)
-- **OS Detection:** TTL-based fingerprinting combined with port-based heuristics
-- **Data Sources:** Public APIs (WHOIS, DNS, Certificate Transparency)
-- **CVE Lookup:** NVD (National Vulnerability Database) + CIRCL CVE Search API
-- **CVSS Scoring:** Full CVSS v3.1, v3.0, and v2.0 support with severity classification
-- **Report Formats:** CLI (colored terminal), JSON, HTML, and PDF
-- **Logging:** All actions logged to `reports/` directory
-
-## Troubleshooting
-
-**"Module not found" errors:**
+**`ModuleNotFoundError` (e.g. `No module named 'dns'`)**
+Activate the virtual environment first, then reinstall:
 ```bash
-pip3 install -r requirements.txt
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-**Permission denied:**
+**`error: externally-managed-environment` on Kali/Debian**
+Use a virtual environment (recommended), or append `--break-system-packages` to the `pip install`.
+
+**Port scan needs elevated privileges**
 ```bash
-sudo python3 main.py  # Only if port scanning requires privileges
+sudo venv/bin/python main.py
 ```
 
-**Timeout errors:**
-- Check internet connection
-- Target may be blocking reconnaissance
-- Try with a different target
+**Timeouts / no results**
+- Check your internet connection.
+- The target may be rate-limiting or blocking reconnaissance.
+- Public CVE/DNS APIs occasionally throttle — retry after a short wait.
 
-## Contributing
+---
 
-This project is maintained for educational purposes. Contributions that enhance reconnaissance capabilities (without exploitation) are welcome.
+## ✅ Ethical Guidelines
 
-## Disclaimer
+**Permitted:** systems you own · systems with written authorization · lab environments · in-scope bug-bounty targets.
 
-This tool performs **identification and assessment only**. It does not:
-- Execute exploits
-- Modify remote systems
-- Perform brute force attacks
-- Launch denial of service
+**Prohibited:** unauthorized scanning · exploitation · denial of service · credential brute forcing · any illegal activity.
 
-Always conduct security assessments responsibly and legally.
+This tool performs **identification and assessment only**. It does not execute exploits, modify remote systems, or launch attacks.
 
-## License
+---
 
-Educational Use Only - Ensure compliance with local laws and regulations.
+## 📜 License
+
+Educational use only — ensure compliance with local laws and regulations. See [LICENSE](LICENSE).
 
 ---
 

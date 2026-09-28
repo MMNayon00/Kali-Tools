@@ -5,10 +5,27 @@ Supports CLI, JSON, HTML, and PDF formats
 """
 
 import json
+import html as _html
 from datetime import datetime
 from pathlib import Path
 from typing import Dict
 from colorama import Fore, Style
+
+# Reuse the JS Hidden Document Intelligence HTML renderer when available
+try:
+    from modules.js_hidden_doc_intel import _generate_html_section as _js_html_section
+except Exception:  # pragma: no cover - fallback when run as a loose script
+    try:
+        from js_hidden_doc_intel import _generate_html_section as _js_html_section
+    except Exception:
+        _js_html_section = None
+
+
+def _esc(value) -> str:
+    """HTML-escape any value, rendering None/empty as a dash."""
+    if value is None or value == "" or value == []:
+        return "&mdash;"
+    return _html.escape(str(value))
 
 # PDF generation imports
 try:
@@ -153,175 +170,348 @@ def generate_json_report(all_results: Dict, output_dir: str = "reports") -> str:
         return ""
 
 
+def _stat_cards(all_results: Dict) -> str:
+    """Build the summary dashboard cards from whatever data is present."""
+    exp = all_results.get('expansion', {}) or {}
+    fp = all_results.get('footprinting', {}) or {}
+    cve = all_results.get('cve_report', {}) or {}
+    js = all_results.get('js_intelligence', {}) or {}
+
+    ip_count = len(exp.get('ip_addresses', []) or [])
+    sub_count = len(all_results.get('subdomains', []) or [])
+    port_count = len(all_results.get('ports', []) or [])
+    tech_count = len((all_results.get('technologies', {}) or {}).get('technologies', []) or [])
+    cve_count = cve.get('total_cves', 0)
+    sec_headers = len((fp.get('http_headers', {}) or {}).get('security_headers', {}) or {})
+    js_findings = len(js.get('endpoints_discovered', []) or []) + len(js.get('hidden_documents_found', []) or [])
+
+    critical = (cve.get('severity_counts', {}) or {}).get('CRITICAL', 0)
+    js_risk = (js.get('risk_summary', {}) or {})
+    critical += js_risk.get('critical', 0)
+
+    cards = [
+        ('IP Addresses', ip_count, '#3282b8'),
+        ('Subdomains', sub_count, '#3282b8'),
+        ('Open Ports', port_count, '#2ed573'),
+        ('Technologies', tech_count, '#3282b8'),
+        ('CVEs Found', cve_count, '#ff6348' if cve_count else '#3282b8'),
+        ('Security Headers', f"{sec_headers}/5", '#2ed573' if sec_headers >= 4 else '#ffa502'),
+        ('JS Findings', js_findings, '#ffa502' if js_findings else '#3282b8'),
+        ('Critical Risks', critical, '#ff4757' if critical else '#2ed573'),
+    ]
+    html = '<div class="cards">'
+    for label, value, color in cards:
+        html += (f'<div class="card"><div class="card-value" style="color:{color}">{_esc(value)}</div>'
+                 f'<div class="card-label">{_esc(label)}</div></div>')
+    html += '</div>'
+    return html
+
+
 def generate_html_report(all_results: Dict, output_dir: str = "reports") -> str:
     """
-    Generate HTML report file
-    
+    Generate a comprehensive HTML report covering every module's findings.
+
     Args:
         all_results: Dictionary containing all reconnaissance results
         output_dir: Directory to save report
-        
+
     Returns:
         Path to generated report file
     """
-    # Ensure reports directory exists
     Path(output_dir).mkdir(exist_ok=True)
-    
-    # Generate filename with timestamp
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     target = all_results.get('target', 'unknown').replace('.', '_')
     filename = f"{output_dir}/mmn_report_{target}_{timestamp}.html"
-    
-    # Build HTML content
-    html_content = f"""<!DOCTYPE html>
+
+    parts = []
+
+    # ── Head + styles ───────────────────────────────────────────────
+    parts.append(f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MMN Reconnaissance Report - {all_results.get('target', 'Unknown')}</title>
+    <title>MMN Reconnaissance Report - {_esc(all_results.get('target', 'Unknown'))}</title>
     <style>
+        * {{ box-sizing: border-box; }}
         body {{
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #1a1a2e;
-            color: #eee;
-            padding: 20px;
-            line-height: 1.6;
+            background-color: #1a1a2e; color: #eee; padding: 20px; line-height: 1.6; margin: 0;
         }}
         .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            background-color: #16213e;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            max-width: 1200px; margin: 0 auto; background-color: #16213e;
+            padding: 30px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.5);
         }}
-        h1 {{
-            color: #0f4c75;
-            text-align: center;
-            border-bottom: 3px solid #3282b8;
-            padding-bottom: 10px;
-        }}
-        h2 {{
-            color: #3282b8;
-            margin-top: 30px;
-            border-left: 4px solid #3282b8;
-            padding-left: 10px;
-        }}
-        .section {{
-            background-color: #0f3460;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 5px;
-        }}
+        h1 {{ color: #3282b8; text-align: center; border-bottom: 3px solid #3282b8; padding-bottom: 10px; }}
+        h2 {{ color: #3282b8; margin-top: 30px; border-left: 4px solid #3282b8; padding-left: 10px; }}
+        h3 {{ color: #bbe1fa; margin-top: 20px; }}
+        .subtitle {{ text-align:center; color:#aaa; margin-top:-8px; }}
+        .section {{ background-color: #0f3460; padding: 20px; margin: 20px 0; border-radius: 5px; }}
         .critical {{ color: #ff4757; font-weight: bold; }}
         .high {{ color: #ff6348; font-weight: bold; }}
         .medium {{ color: #ffa502; }}
         .low {{ color: #1e90ff; }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin: 15px 0;
-        }}
-        th, td {{
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #3282b8;
-        }}
-        th {{
-            background-color: #0f4c75;
-            color: white;
-        }}
-        .timestamp {{
-            text-align: center;
-            color: #aaa;
-            margin-top: 20px;
-        }}
+        .ok {{ color: #2ed573; font-weight: bold; }}
+        .miss {{ color: #ff6348; font-weight: bold; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+        th, td {{ padding: 10px 12px; text-align: left; border-bottom: 1px solid #26568a; vertical-align: top; }}
+        th {{ background-color: #0f4c75; color: white; }}
+        tr:hover td {{ background-color: rgba(50,130,184,0.12); }}
+        .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 15px; margin: 20px 0; }}
+        .card {{ background-color: #0f3460; border-radius: 8px; padding: 18px; text-align: center; border: 1px solid #26568a; }}
+        .card-value {{ font-size: 2em; font-weight: bold; }}
+        .card-label {{ color: #bbe1fa; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .nav {{ text-align:center; margin: 15px 0; }}
+        .nav a {{ color:#bbe1fa; margin:0 8px; text-decoration:none; font-size:0.9em; }}
+        .nav a:hover {{ text-decoration:underline; }}
+        .badge {{ display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.8em; }}
+        code, .mono {{ font-family: 'Courier New', monospace; word-break: break-all; }}
+        .empty {{ color:#888; font-style: italic; }}
+        .timestamp {{ text-align: center; color: #aaa; margin-top: 30px; border-top:1px solid #26568a; padding-top:15px; }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🛡️ MMN Reconnaissance Report</h1>
-        <div class="section">
-            <h2>Target Information</h2>
-            <p><strong>Target:</strong> {all_results.get('target', 'Unknown')}</p>
-            <p><strong>Scan Date:</strong> {all_results.get('timestamp', 'Unknown')}</p>
-        </div>
-"""
-    
-    # Add expansion data
-    if 'expansion' in all_results:
-        expansion = all_results['expansion']
-        html_content += """
-        <div class="section">
-            <h2>Target Expansion</h2>
-"""
-        if expansion.get('ip_addresses'):
-            html_content += f"<p><strong>IP Addresses:</strong> {', '.join(expansion['ip_addresses'])}</p>"
-        if expansion.get('reverse_dns'):
-            html_content += f"<p><strong>Reverse DNS:</strong> {expansion['reverse_dns']}</p>"
-        html_content += "</div>"
-    
-    # Add open ports
-    if 'ports' in all_results and all_results['ports']:
-        html_content += """
-        <div class="section">
-            <h2>Open Ports & Services</h2>
+        <h1>&#128737;&#65039; MMN Reconnaissance Report</h1>
+        <p class="subtitle">Target: <strong>{_esc(all_results.get('target', 'Unknown'))}</strong> &middot; {_esc(all_results.get('scan_type', 'Assessment'))}</p>
+""")
+
+    # ── Nav ─────────────────────────────────────────────────────────
+    nav_items = [('overview', 'Overview')]
+    if all_results.get('expansion'): nav_items.append(('expansion', 'Expansion'))
+    if all_results.get('footprinting'): nav_items.append(('footprinting', 'Footprinting'))
+    if all_results.get('subdomains'): nav_items.append(('subdomains', 'Subdomains'))
+    if all_results.get('os_detection'): nav_items.append(('os', 'OS'))
+    if all_results.get('ports'): nav_items.append(('ports', 'Ports'))
+    if all_results.get('technologies'): nav_items.append(('tech', 'Technologies'))
+    if 'cve_report' in all_results: nav_items.append(('cve', 'Vulnerabilities'))
+    if all_results.get('js_intelligence'): nav_items.append(('js-intel', 'JS Intel'))
+    parts.append('<div class="nav">' + ' | '.join(
+        f'<a href="#{i}">{_esc(l)}</a>' for i, l in nav_items) + '</div>')
+
+    # ── Overview ────────────────────────────────────────────────────
+    parts.append(f"""
+        <div class="section" id="overview">
+            <h2>Overview</h2>
+            {_stat_cards(all_results)}
             <table>
-                <tr>
-                    <th>Port</th>
-                    <th>Service</th>
-                    <th>Product</th>
-                    <th>Version</th>
-                </tr>
-"""
-        for port in all_results['ports']:
-            html_content += f"""
-                <tr>
-                    <td>{port.get('port', 'N/A')}</td>
-                    <td>{port.get('service', 'N/A')}</td>
-                    <td>{port.get('product', 'N/A')}</td>
-                    <td>{port.get('version', 'N/A')}</td>
-                </tr>
-"""
-        html_content += "</table></div>"
-    
-    # Add CVE information
+                <tr><th>Target</th><td>{_esc(all_results.get('target', 'Unknown'))}</td></tr>
+                <tr><th>Scan Type</th><td>{_esc(all_results.get('scan_type', 'Unknown'))}</td></tr>
+                <tr><th>Scan Date</th><td>{_esc(all_results.get('timestamp', 'Unknown'))}</td></tr>
+            </table>
+        </div>
+""")
+
+    # ── Target Expansion ────────────────────────────────────────────
+    if all_results.get('expansion'):
+        exp = all_results['expansion']
+        parts.append('<div class="section" id="expansion"><h2>Target Expansion</h2><table>')
+        parts.append(f"<tr><th>Target Type</th><td>{_esc(exp.get('target_type'))}</td></tr>")
+        if exp.get('ip_addresses'):
+            parts.append(f"<tr><th>IP Addresses</th><td class='mono'>{_esc(', '.join(exp['ip_addresses']))}</td></tr>")
+        parts.append(f"<tr><th>Reverse DNS</th><td class='mono'>{_esc(exp.get('reverse_dns'))}</td></tr>")
+        hp = exp.get('hosting_provider', {}) or {}
+        if hp:
+            parts.append(f"<tr><th>Hosting Provider</th><td>{_esc(hp.get('provider'))} ({_esc(hp.get('type'))})</td></tr>")
+        parts.append('</table>')
+
+        dns_records = exp.get('dns_records', {}) or {}
+        if any(dns_records.values()):
+            parts.append('<h3>DNS Records</h3><table><tr><th>Type</th><th>Records</th></tr>')
+            for rtype, recs in dns_records.items():
+                if recs:
+                    vals = '<br>'.join(_esc(r) for r in recs)
+                    parts.append(f"<tr><td><strong>{_esc(rtype)}</strong></td><td class='mono'>{vals}</td></tr>")
+            parts.append('</table>')
+        parts.append('</div>')
+
+    # ── Footprinting ────────────────────────────────────────────────
+    if all_results.get('footprinting'):
+        fp = all_results['footprinting']
+        parts.append('<div class="section" id="footprinting"><h2>Footprinting</h2>')
+
+        whois = fp.get('whois', {}) or {}
+        if any(whois.values()):
+            parts.append('<h3>WHOIS</h3><table>')
+            for label, key in [('Domain', 'domain_name'), ('Registrar', 'registrar'),
+                               ('Created', 'creation_date'), ('Expires', 'expiration_date'),
+                               ('Status', 'status'), ('Country', 'country')]:
+                parts.append(f"<tr><th>{label}</th><td>{_esc(whois.get(key))}</td></tr>")
+            if whois.get('name_servers'):
+                ns = '<br>'.join(_esc(n) for n in whois['name_servers'])
+                parts.append(f"<tr><th>Name Servers</th><td class='mono'>{ns}</td></tr>")
+            if whois.get('emails'):
+                em = ', '.join(_esc(e) for e in whois['emails'])
+                parts.append(f"<tr><th>Emails</th><td class='mono'>{em}</td></tr>")
+            parts.append('</table>')
+
+        ssl = fp.get('ssl_certificate', {}) or {}
+        if any(ssl.values()):
+            parts.append('<h3>SSL / TLS Certificate</h3><table>')
+            issuer = (ssl.get('issuer', {}) or {}).get('organizationName') or (ssl.get('issuer', {}) or {}).get('commonName')
+            subject = (ssl.get('subject', {}) or {}).get('commonName')
+            parts.append(f"<tr><th>Subject CN</th><td>{_esc(subject)}</td></tr>")
+            parts.append(f"<tr><th>Issuer</th><td>{_esc(issuer)}</td></tr>")
+            parts.append(f"<tr><th>Valid From</th><td>{_esc(ssl.get('not_before'))}</td></tr>")
+            parts.append(f"<tr><th>Valid Until</th><td>{_esc(ssl.get('not_after'))}</td></tr>")
+            parts.append(f"<tr><th>Version</th><td>{_esc(ssl.get('version'))}</td></tr>")
+            parts.append(f"<tr><th>Signature Algorithm</th><td>{_esc(ssl.get('signature_algorithm'))}</td></tr>")
+            parts.append(f"<tr><th>Serial Number</th><td class='mono'>{_esc(ssl.get('serial_number'))}</td></tr>")
+            if ssl.get('sans'):
+                sans = ', '.join(_esc(s) for s in ssl['sans'])
+                parts.append(f"<tr><th>SANs</th><td class='mono'>{sans}</td></tr>")
+            parts.append('</table>')
+
+        hh = fp.get('http_headers', {}) or {}
+        if hh.get('status_code') is not None:
+            parts.append('<h3>HTTP Response</h3><table>')
+            parts.append(f"<tr><th>Status Code</th><td>{_esc(hh.get('status_code'))}</td></tr>")
+            parts.append(f"<tr><th>Protocol</th><td>{_esc(hh.get('protocol'))}</td></tr>")
+            parts.append(f"<tr><th>Server</th><td>{_esc(hh.get('server'))}</td></tr>")
+            parts.append(f"<tr><th>X-Powered-By</th><td>{_esc(hh.get('powered_by'))}</td></tr>")
+            parts.append(f"<tr><th>Content-Type</th><td>{_esc(hh.get('content_type'))}</td></tr>")
+            parts.append('</table>')
+
+            # Security headers: show present AND missing
+            present = hh.get('security_headers', {}) or {}
+            all_sec = ['Strict-Transport-Security', 'Content-Security-Policy',
+                       'X-Frame-Options', 'X-Content-Type-Options', 'X-XSS-Protection']
+            parts.append('<h3>Security Headers</h3><table><tr><th>Header</th><th>Status</th><th>Value</th></tr>')
+            for h in all_sec:
+                if h in present:
+                    parts.append(f"<tr><td>{_esc(h)}</td><td class='ok'>PRESENT</td><td class='mono'>{_esc(present[h])}</td></tr>")
+                else:
+                    parts.append(f"<tr><td>{_esc(h)}</td><td class='miss'>MISSING</td><td>&mdash;</td></tr>")
+            parts.append('</table>')
+
+            if hh.get('all_headers'):
+                parts.append('<h3>All Response Headers</h3><table><tr><th>Header</th><th>Value</th></tr>')
+                for k, v in hh['all_headers'].items():
+                    parts.append(f"<tr><td>{_esc(k)}</td><td class='mono'>{_esc(v)}</td></tr>")
+                parts.append('</table>')
+        parts.append('</div>')
+
+    # ── Subdomains ──────────────────────────────────────────────────
+    if all_results.get('subdomains'):
+        subs = all_results['subdomains']
+        parts.append(f'<div class="section" id="subdomains"><h2>Subdomains ({len(subs)})</h2>')
+        parts.append('<table><tr><th>#</th><th>Subdomain</th></tr>')
+        for i, s in enumerate(subs, 1):
+            parts.append(f"<tr><td>{i}</td><td class='mono'>{_esc(s)}</td></tr>")
+        parts.append('</table></div>')
+
+    # ── OS Detection ────────────────────────────────────────────────
+    if all_results.get('os_detection'):
+        os_info = all_results['os_detection']
+        parts.append('<div class="section" id="os"><h2>Operating System Detection</h2><table>')
+        parts.append(f"<tr><th>OS Guess</th><td>{_esc(os_info.get('os_guess'))}</td></tr>")
+        parts.append(f"<tr><th>Confidence</th><td>{_esc(os_info.get('confidence'))}</td></tr>")
+        if os_info.get('indicators'):
+            ind = '<br>'.join(_esc(i) for i in os_info['indicators'])
+            parts.append(f"<tr><th>Indicators</th><td>{ind}</td></tr>")
+        parts.append('</table></div>')
+
+    # ── Open Ports ──────────────────────────────────────────────────
+    if all_results.get('ports'):
+        ports = all_results['ports']
+        parts.append(f'<div class="section" id="ports"><h2>Open Ports &amp; Services ({len(ports)})</h2>')
+        parts.append('<table><tr><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>Banner</th></tr>')
+        for p in ports:
+            parts.append(
+                f"<tr><td>{_esc(p.get('port'))}</td><td>{_esc(p.get('service'))}</td>"
+                f"<td>{_esc(p.get('product'))}</td><td>{_esc(p.get('version'))}</td>"
+                f"<td class='mono'>{_esc(p.get('banner'))}</td></tr>")
+        parts.append('</table></div>')
+
+    # ── Technologies ────────────────────────────────────────────────
+    if all_results.get('technologies'):
+        tech = all_results['technologies']
+        techs = tech.get('technologies', []) or []
+        parts.append(f'<div class="section" id="tech"><h2>Technology Stack ({len(techs)})</h2>')
+        if techs:
+            parts.append('<table><tr><th>Technology</th><th>Category</th><th>Confidence</th></tr>')
+            for t in techs:
+                parts.append(
+                    f"<tr><td>{_esc(t.get('name'))}</td><td>{_esc(t.get('category'))}</td>"
+                    f"<td>{_esc(t.get('confidence'))}</td></tr>")
+            parts.append('</table>')
+        else:
+            parts.append('<p class="empty">No technologies identified.</p>')
+        parts.append('</div>')
+
+    # ── Vulnerabilities / CVEs ──────────────────────────────────────
     if 'cve_report' in all_results:
-        cve_report = all_results['cve_report']
-        html_content += f"""
-        <div class="section">
-            <h2>Vulnerability Assessment</h2>
-            <p><strong>Total Services Analyzed:</strong> {cve_report.get('total_services', 0)}</p>
-            <p><strong>Vulnerable Services:</strong> {cve_report.get('vulnerable_services', 0)}</p>
-            <p><strong>Total CVEs Found:</strong> {cve_report.get('total_cves', 0)}</p>
-            
-            <h3>Severity Distribution</h3>
-            <ul>
-"""
-        severity_counts = cve_report.get('severity_counts', {})
-        for severity, count in severity_counts.items():
-            if count > 0:
-                severity_class = severity.lower()
-                html_content += f'<li class="{severity_class}">{severity}: {count}</li>'
-        
-        html_content += "</ul></div>"
-    
-    # Close HTML
-    html_content += f"""
+        cve = all_results['cve_report']
+        parts.append('<div class="section" id="cve"><h2>Vulnerability Assessment</h2><table>')
+        parts.append(f"<tr><th>Services Analyzed</th><td>{_esc(cve.get('total_services', 0))}</td></tr>")
+        parts.append(f"<tr><th>Vulnerable Services</th><td>{_esc(cve.get('vulnerable_services', 0))}</td></tr>")
+        parts.append(f"<tr><th>Total CVEs</th><td>{_esc(cve.get('total_cves', 0))}</td></tr>")
+        parts.append('</table>')
+
+        sev = cve.get('severity_counts', {}) or {}
+        if any(sev.values()):
+            parts.append('<h3>Severity Distribution</h3><table><tr>')
+            for s in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFORMATIONAL']:
+                parts.append(f"<th>{s}</th>")
+            parts.append('</tr><tr>')
+            for s, cls in [('CRITICAL', 'critical'), ('HIGH', 'high'), ('MEDIUM', 'medium'),
+                           ('LOW', 'low'), ('INFORMATIONAL', '')]:
+                parts.append(f"<td class='{cls}'>{_esc(sev.get(s, 0))}</td>")
+            parts.append('</tr></table>')
+
+        for finding in (cve.get('findings', []) or []):
+            cves = finding.get('cves', []) or []
+            if not cves:
+                continue
+            parts.append(f"<h3>Port {_esc(finding.get('port'))}: {_esc(finding.get('product'))} {_esc(finding.get('version'))} ({len(cves)} CVEs)</h3>")
+            parts.append('<table><tr><th>CVE ID</th><th>CVSS</th><th>Severity</th><th>Summary</th></tr>')
+            for c in cves:
+                sclass = str(c.get('severity', '')).lower()
+                parts.append(
+                    f"<tr><td class='mono'>{_esc(c.get('cve_id'))}</td><td>{_esc(c.get('cvss'))}</td>"
+                    f"<td class='{sclass}'>{_esc(c.get('severity'))}</td><td>{_esc(c.get('summary'))}</td></tr>")
+            parts.append('</table>')
+        parts.append('</div>')
+
+    # ── JS Hidden Document Intelligence ─────────────────────────────
+    if all_results.get('js_intelligence'):
+        js = all_results['js_intelligence']
+        if _js_html_section is not None:
+            try:
+                parts.append(_js_html_section(js))
+            except Exception:
+                pass
+        # PDF metadata (not covered by the JS module's own section)
+        pdf_meta = js.get('pdf_metadata_extracted', []) or []
+        if pdf_meta:
+            parts.append('<div class="section"><h2>PDF Metadata Extracted</h2>'
+                         '<table><tr><th>Risk</th><th>URL</th><th>Author</th><th>Producer</th><th>Created</th><th>Pages</th></tr>')
+            for m in pdf_meta:
+                sclass = str(m.get('risk', '')).lower()
+                parts.append(
+                    f"<tr><td class='{sclass}'>{_esc(str(m.get('risk','')).upper())}</td>"
+                    f"<td class='mono'>{_esc(m.get('url'))}</td><td>{_esc(m.get('author'))}</td>"
+                    f"<td>{_esc(m.get('producer'))}</td><td>{_esc(m.get('creation_date'))}</td>"
+                    f"<td>{_esc(m.get('pages'))}</td></tr>")
+            parts.append('</table></div>')
+
+    # ── Footer ──────────────────────────────────────────────────────
+    parts.append(f"""
         <div class="timestamp">
-            <p>Generated by MMN Reconnaissance Framework</p>
-            <p>Report Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+            <p>Generated by MMN Reconnaissance Framework v{all_results.get('framework_version', '2.0.0')}</p>
+            <p>Report Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} &middot; FOR AUTHORIZED USE ONLY</p>
         </div>
     </div>
 </body>
 </html>
-"""
-    
-    # Write HTML report
+""")
+
+    html_content = '\n'.join(parts)
+
     try:
         with open(filename, 'w') as f:
             f.write(html_content)
-        
         print(f"{Fore.GREEN}[✓] HTML report saved: {filename}{Style.RESET_ALL}")
         return filename
     except Exception as e:

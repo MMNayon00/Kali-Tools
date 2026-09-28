@@ -42,7 +42,7 @@ MMN_BANNER = f"""{Fore.CYAN}
 ╚═╝     ╚═╝╚═╝     ╚═╝╚═╝  ╚═══╝
 {Style.RESET_ALL}
 {Fore.YELLOW}Modular Reconnaissance & Assessment Framework{Style.RESET_ALL}
-{Fore.WHITE}Version 1.0.0 | For Authorized Use Only{Style.RESET_ALL}
+{Fore.WHITE}Version 2.0.0 | For Authorized Use Only{Style.RESET_ALL}
 """
 
 
@@ -113,7 +113,8 @@ def run_full_assessment(target: str) -> dict:
     results = {
         'target': target,
         'timestamp': datetime.now().isoformat(),
-        'scan_type': 'Full Assessment'
+        'scan_type': 'Full Assessment',
+        'framework_version': '2.0.0'
     }
     
     print(f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
@@ -184,7 +185,8 @@ def run_basic_footprinting(target: str) -> dict:
     results = {
         'target': target,
         'timestamp': datetime.now().isoformat(),
-        'scan_type': 'Basic Footprinting'
+        'scan_type': 'Basic Footprinting',
+        'framework_version': '2.0.0'
     }
     
     print(f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
@@ -222,7 +224,8 @@ def run_custom_modules(target: str, module_selection: list) -> dict:
     results = {
         'target': target,
         'timestamp': datetime.now().isoformat(),
-        'scan_type': 'Custom'
+        'scan_type': 'Custom',
+        'framework_version': '2.0.0'
     }
     
     print(f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
@@ -312,12 +315,12 @@ def main():
             elif choice == '1':
                 # Full Assessment
                 results = run_full_assessment(target)
-                report_generator.generate_reports(results, formats=['cli', 'json', 'html'])
+                report_generator.generate_reports(results, formats=['cli', 'json', 'html', 'pdf'])
             
             elif choice == '2':
                 # Basic Footprinting
                 results = run_basic_footprinting(target)
-                report_generator.generate_reports(results, formats=['cli', 'json'])
+                report_generator.generate_reports(results, formats=['cli', 'json', 'html'])
             
             elif choice == '3':
                 # Custom Module Selection
@@ -331,7 +334,7 @@ def main():
                     module_numbers = [int(x.strip()) for x in module_input.split(',') if x.strip()]
                     if module_numbers:
                         results = run_custom_modules(target, module_numbers)
-                        report_generator.generate_reports(results, formats=['cli', 'json'])
+                        report_generator.generate_reports(results, formats=['cli', 'json', 'html'])
                     else:
                         print(f"{Fore.RED}[!] No valid modules selected{Style.RESET_ALL}")
                 except ValueError:
