@@ -861,9 +861,6 @@ def run_js_document_intelligence(
         if save_report:
             _save_json_report(result)
 
-        # Attach HTML section for report_generator integration
-        result["_html_section"] = _generate_html_section(result)
-
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}[!] JS Intelligence scan interrupted{Style.RESET_ALL}")
     except Exception as exc:
