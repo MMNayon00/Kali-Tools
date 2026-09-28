@@ -9,7 +9,52 @@ Use only on systems you own or have explicit permission to test.
 
 import os
 import sys
+import importlib.util
 from datetime import datetime
+
+
+# ── Dependency preflight ────────────────────────────────────────────────────
+# Verify every required third-party package is installed BEFORE the framework
+# starts, so all reports (including PDF) generate correctly and no "library
+# missing" message ever appears after a scan has finished. Uses only the
+# standard library so it runs even if nothing has been installed yet.
+def check_dependencies() -> None:
+    """Abort early with clear guidance if any required package is missing."""
+    # pip package name -> import (module) name
+    required = {
+        "colorama":        "colorama",
+        "requests":        "requests",
+        "dnspython":       "dns",
+        "python-whois":    "whois",
+        "beautifulsoup4":  "bs4",
+        "reportlab":       "reportlab",
+        "pypdf":           "pypdf",
+    }
+    missing = [pkg for pkg, mod in required.items()
+               if importlib.util.find_spec(mod) is None]
+
+    if missing:
+        line = "=" * 70
+        print(line)
+        print("  [!] MMN cannot start - required dependencies are missing")
+        print(line)
+        print("  Missing package(s): " + ", ".join(missing))
+        print()
+        print("  Install everything with:")
+        print("      pip install -r requirements.txt")
+        print()
+        print("  On Kali/Debian (PEP 668), either activate a virtual env:")
+        print("      python3 -m venv venv && source venv/bin/activate")
+        print("      pip install -r requirements.txt")
+        print("  or install system-wide:")
+        print("      pip install -r requirements.txt --break-system-packages")
+        print(line)
+        sys.exit(1)
+
+
+# Run the preflight before importing anything that depends on these packages.
+check_dependencies()
+
 from colorama import init, Fore, Style
 
 # Initialize colorama
