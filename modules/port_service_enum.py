@@ -223,14 +223,18 @@ def _get_remote_ttl(ip: str) -> Optional[int]:
     return None
 
 
-def detect_os_fingerprint(ip: str, open_ports: List[int]) -> Dict:
+def detect_os_fingerprint(ip: str, open_ports: List[int], banners: List[str] = None) -> Dict:
     """
-    Attempt basic OS detection based on open ports and TTL
-    
+    Attempt basic OS detection from service banners, open ports, and TTL.
+
+    Service banners (e.g. "OpenSSH ... Ubuntu", "Apache/2.4.7 (Ubuntu)") are the
+    most reliable signal and take priority over the TTL/port heuristics.
+
     Args:
         ip: Target IP address
         open_ports: List of open port numbers
-        
+        banners: Optional list of service banner strings for OS keyword matching
+
     Returns:
         Dictionary with OS detection results
     """
@@ -287,7 +291,36 @@ def detect_os_fingerprint(ip: str, open_ports: List[int]) -> Dict:
         os_hints['os_guess'] = 'macOS/Apple'
         os_hints['confidence'] = 'High'
         os_hints['indicators'].append('AFP port 548 open (macOS)')
-    
+
+    # Banner-based detection is the most authoritative signal and overrides the
+    # TTL/port heuristics above (e.g. a Linux box behind NAT can show TTL=128).
+    banner_signatures = [
+        ('ubuntu',   'Linux (Ubuntu)'),
+        ('debian',   'Linux (Debian)'),
+        ('centos',   'Linux (CentOS)'),
+        ('red hat',  'Linux (Red Hat)'),
+        ('redhat',   'Linux (Red Hat)'),
+        ('fedora',   'Linux (Fedora)'),
+        ('freebsd',  'FreeBSD'),
+        ('openbsd',  'OpenBSD'),
+        ('win32',    'Windows'),
+        ('win64',    'Windows'),
+        ('windows',  'Windows'),
+        ('microsoft-iis', 'Windows (IIS)'),
+        ('darwin',   'macOS'),
+        ('unix',     'Unix'),
+    ]
+    for banner in (banners or []):
+        if not banner:
+            continue
+        bl = banner.lower()
+        for key, os_name in banner_signatures:
+            if key in bl:
+                os_hints['os_guess'] = os_name
+                os_hints['confidence'] = 'High'
+                os_hints['indicators'].append(f'Service banner reveals "{key}" -> {os_name}')
+                return os_hints  # authoritative match; stop here
+
     return os_hints
 
 
@@ -421,7 +454,11 @@ def scan_ports(target: str, port_range: str = "common", rate_limit: float = 0.1)
     os_detection = {}
     if open_ports:
         print(f"\n{Fore.CYAN}[*] Performing OS detection...{Style.RESET_ALL}")
-        os_detection = detect_os_fingerprint(target, [p['port'] for p in open_ports])
+        os_detection = detect_os_fingerprint(
+            target,
+            [p['port'] for p in open_ports],
+            banners=[p.get('banner', '') for p in open_ports],
+        )
         
         print(f"{Fore.YELLOW}OS Detection Results:{Style.RESET_ALL}")
         print(f"{Fore.WHITE}  OS Guess: {os_detection.get('os_guess', 'Unknown')}{Style.RESET_ALL}")
