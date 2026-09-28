@@ -27,6 +27,13 @@ def _esc(value) -> str:
         return "&mdash;"
     return _html.escape(str(value))
 
+
+def _safe_filename(target: str) -> str:
+    """Turn a target into a filesystem-safe slug for report filenames."""
+    slug = "".join(c if (c.isalnum() or c in "-_") else "_" for c in str(target or "unknown"))
+    slug = slug.strip("_") or "unknown"
+    return slug[:80]
+
 # PDF generation imports
 try:
     from reportlab.lib import colors
@@ -65,7 +72,7 @@ def generate_cli_report(all_results: Dict) -> None:
             print(f"{Fore.WHITE}  IP Addresses: {', '.join(expansion['ip_addresses'])}{Style.RESET_ALL}")
         if expansion.get('reverse_dns'):
             print(f"{Fore.WHITE}  Reverse DNS: {expansion['reverse_dns']}{Style.RESET_ALL}")
-        if expansion.get('hosting_provider', {}).get('provider'):
+        if (expansion.get('hosting_provider') or {}).get('provider'):
             print(f"{Fore.WHITE}  Hosting Provider: {expansion['hosting_provider']['provider']}{Style.RESET_ALL}")
         print()
     
@@ -74,17 +81,17 @@ def generate_cli_report(all_results: Dict) -> None:
         footprint = all_results['footprinting']
         print(f"{Fore.YELLOW}FOOTPRINTING SUMMARY{Style.RESET_ALL}")
         
-        if footprint.get('whois', {}).get('registrar'):
+        if (footprint.get('whois') or {}).get('registrar'):
             print(f"{Fore.WHITE}  Registrar: {footprint['whois']['registrar']}{Style.RESET_ALL}")
         
-        if footprint.get('ssl_certificate', {}).get('issuer'):
+        if (footprint.get('ssl_certificate') or {}).get('issuer'):
             issuer = footprint['ssl_certificate']['issuer'].get('organizationName', 'Unknown')
             print(f"{Fore.WHITE}  SSL Issuer: {issuer}{Style.RESET_ALL}")
         
-        if footprint.get('http_headers', {}).get('server'):
+        if (footprint.get('http_headers') or {}).get('server'):
             print(f"{Fore.WHITE}  Web Server: {footprint['http_headers']['server']}{Style.RESET_ALL}")
         
-        security_headers = footprint.get('http_headers', {}).get('security_headers', {})
+        security_headers = (footprint.get('http_headers') or {}).get('security_headers', {}) or {}
         print(f"{Fore.WHITE}  Security Headers: {len(security_headers)}/5{Style.RESET_ALL}")
         print()
     
@@ -155,7 +162,7 @@ def generate_json_report(all_results: Dict, output_dir: str = "reports") -> str:
     
     # Generate filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    target = all_results.get('target', 'unknown').replace('.', '_')
+    target = _safe_filename(all_results.get('target', 'unknown'))
     filename = f"{output_dir}/mmn_report_{target}_{timestamp}.json"
     
     # Write JSON report
@@ -221,7 +228,7 @@ def generate_html_report(all_results: Dict, output_dir: str = "reports") -> str:
     Path(output_dir).mkdir(exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    target = all_results.get('target', 'unknown').replace('.', '_')
+    target = _safe_filename(all_results.get('target', 'unknown'))
     filename = f"{output_dir}/mmn_report_{target}_{timestamp}.html"
 
     parts = []
@@ -612,7 +619,7 @@ def generate_pdf_report(all_results: Dict, filename: str = None) -> str:
                 exp_data.append(['IP Addresses:', ', '.join(expansion['ip_addresses'])])
             if expansion.get('reverse_dns'):
                 exp_data.append(['Reverse DNS:', expansion['reverse_dns']])
-            if expansion.get('hosting_provider', {}).get('provider'):
+            if (expansion.get('hosting_provider') or {}).get('provider'):
                 exp_data.append(['Hosting Provider:', expansion['hosting_provider']['provider']])
             
             if exp_data:
