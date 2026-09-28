@@ -331,7 +331,12 @@ def generate_cve_report(services: List[Dict]) -> Dict:
             
             # Count severities
             for cve in cves:
-                severity = cve['severity']
+                severity = cve.get('severity', 'INFORMATIONAL')
+                # Normalize values that are not one of the tracked buckets
+                if severity == 'NONE' or severity == 'UNKNOWN':
+                    severity = 'INFORMATIONAL'
+                if severity not in cve_report['severity_counts']:
+                    cve_report['severity_counts'][severity] = 0
                 cve_report['severity_counts'][severity] += 1
                 
                 # Display each CVE

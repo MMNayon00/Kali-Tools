@@ -9,6 +9,7 @@ import ssl
 import time
 import struct
 import platform
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
 from colorama import Fore, Style
@@ -192,6 +193,36 @@ def detect_service_version(banner: str, port: int) -> Dict[str, str]:
     return service_info
 
 
+def _get_remote_ttl(ip: str) -> Optional[int]:
+    """
+    Return the target's IP TTL by parsing a single ICMP echo reply.
+
+    Uses the system `ping` command so it works without raw-socket/root
+    privileges on Linux, macOS, and Windows. Returns None on any failure.
+    """
+    try:
+        system = platform.system().lower()
+        if system == 'windows':
+            cmd = ['ping', '-n', '1', '-w', '2000', ip]
+        elif system == 'darwin':
+            # macOS: -t is the total timeout in seconds (-W is milliseconds)
+            cmd = ['ping', '-c', '1', '-t', '3', ip]
+        else:
+            # Linux: -W is the reply timeout in seconds
+            cmd = ['ping', '-c', '1', '-W', '3', ip]
+
+        output = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=6
+        ).stdout.lower()
+
+        match = re.search(r'ttl[=|:]\s*(\d+)', output)
+        if match:
+            return int(match.group(1))
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+    return None
+
+
 def detect_os_fingerprint(ip: str, open_ports: List[int]) -> Dict:
     """
     Attempt basic OS detection based on open ports and TTL
@@ -210,29 +241,28 @@ def detect_os_fingerprint(ip: str, open_ports: List[int]) -> Dict:
     }
     
     try:
-        # Check TTL (rough indicator)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)
-        sock.connect((ip, open_ports[0] if open_ports else 80))
-        
-        # Get TTL from socket (platform-dependent)
-        ttl = sock.getsockopt(socket.IPPROTO_IP, socket.IP_TTL)
-        sock.close()
-        
-        # TTL-based OS detection (rough estimate)
-        if 60 <= ttl <= 64:
+        # Read the REMOTE host's TTL from an ICMP echo reply. A TCP socket's
+        # IP_TTL option only reports the local outgoing TTL, not the target's,
+        # so we parse the system ping output instead (works without root).
+        ttl = _get_remote_ttl(ip)
+
+        # TTL-based OS detection. Observed TTL is decremented by one per hop,
+        # so we round up to the nearest common initial TTL (64/128/255).
+        if ttl is None:
+            raise ValueError("TTL unavailable")
+        elif 0 < ttl <= 64:
             os_hints['os_guess'] = 'Linux/Unix'
             os_hints['confidence'] = 'Medium'
-            os_hints['indicators'].append(f'TTL={ttl} (typical for Linux)')
-        elif 120 <= ttl <= 128:
+            os_hints['indicators'].append(f'TTL={ttl} (initial ~64, typical for Linux/Unix/macOS)')
+        elif 64 < ttl <= 128:
             os_hints['os_guess'] = 'Windows'
             os_hints['confidence'] = 'Medium'
-            os_hints['indicators'].append(f'TTL={ttl} (typical for Windows)')
-        elif 250 <= ttl <= 255:
+            os_hints['indicators'].append(f'TTL={ttl} (initial ~128, typical for Windows)')
+        elif 128 < ttl <= 255:
             os_hints['os_guess'] = 'Cisco/Network Device'
             os_hints['confidence'] = 'Medium'
-            os_hints['indicators'].append(f'TTL={ttl} (typical for network devices)')
-    except:
+            os_hints['indicators'].append(f'TTL={ttl} (initial ~255, typical for network devices)')
+    except Exception:
         pass
     
     # Port-based OS hints

@@ -167,15 +167,29 @@ def ssl_certificate_check(target: str, port: int = 443) -> Dict:
         print(f"{Fore.CYAN}  [i] Cannot connect to port {port}, SSL inspection skipped{Style.RESET_ALL}")
         return cert_data
     
-    try:
-        context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        
+    def _fetch_cert(verify: bool):
+        """Return the peer certificate dict. A verifying handshake is required
+        for getpeercert() to return a populated dict; we fall back to an
+        unverified handshake (limited data) if verification fails."""
+        if verify:
+            context = ssl.create_default_context()
+        else:
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
         with socket.create_connection((target, port), timeout=10) as sock:
             with context.wrap_socket(sock, server_hostname=target) as ssock:
-                cert = ssock.getpeercert()
-                
+                return ssock.getpeercert()
+
+    try:
+        # Try a verifying handshake first so the certificate fields are
+        # actually populated; fall back to unverified on any failure.
+        try:
+            cert = _fetch_cert(verify=True)
+        except Exception:
+            cert = _fetch_cert(verify=False)
+
+        if cert:
                 # Parse certificate data
                 cert_data['subject'] = dict(x[0] for x in cert.get('subject', ())) if cert.get('subject') else {}
                 cert_data['issuer'] = dict(x[0] for x in cert.get('issuer', ())) if cert.get('issuer') else {}
